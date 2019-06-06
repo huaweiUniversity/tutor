@@ -1,7 +1,6 @@
 import pkg_resources
 
 from . import exceptions
-from . import fmt
 
 """
 Tutor plugins are regular python packages that have a 'tutor.plugin.v1' entrypoint. This
@@ -122,6 +121,7 @@ def iter_scripts(config, script_name):
         scripts = get_callable_attr(plugin, "scripts", {})
         for service in scripts.get(script_name, []):
             yield plugin_name, service
+
 
 def iter_templates(config):
     for plugin_name, plugin in iter_enabled(config):
