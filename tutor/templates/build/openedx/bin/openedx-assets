@@ -36,6 +36,9 @@ def main():
     xmodule = subparsers.add_parser('xmodule', help="Process assets from xmodule")
     xmodule.set_defaults(func=run_xmodule)
 
+    coffeescript = subparsers.add_parser('coffeescript', help="Compile coffeescript")
+    coffeescript.set_defaults(func=run_coffeescript)
+
     webpack = subparsers.add_parser('webpack', help="Run webpack")
     webpack.add_argument('-r', '--static-root', default=DEFAULT_STATIC_ROOT)
     webpack.add_argument('-e', '--env', choices=['prod', 'dev'], default='prod')
@@ -67,6 +70,7 @@ def main():
 def run_build(args):
     run_xmodule(args)
     run_npm(args)
+    run_coffeescript(args)
     run_webpack(args)
     run_common(args)
     run_themes(args)
@@ -77,6 +81,9 @@ def run_xmodule(args):
 
 def run_npm(args):
     assets.process_npm_assets()
+
+def run_coffeescript(args):
+    assets.compile_coffeescript()
 
 def run_webpack(args):
     os.environ['STATIC_ROOT_LMS'] = args.static_root

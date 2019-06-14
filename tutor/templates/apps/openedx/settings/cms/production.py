@@ -1,5 +1,5 @@
 import os
-from cms.envs.production import *
+from cms.envs.aws import *
 
 
 # Execute the contents of common.py in this context

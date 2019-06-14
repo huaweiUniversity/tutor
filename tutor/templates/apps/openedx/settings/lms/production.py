@@ -1,5 +1,5 @@
 import os
-from lms.envs.production import *
+from lms.envs.aws import *
 
 
 # Execute the contents of common.py in this context

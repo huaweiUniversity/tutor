@@ -18,7 +18,7 @@ RUN curl -L -o /tmp/dockerize.tar.gz https://github.com/jwilder/dockerize/releas
     && rm /tmp/dockerize.tar.gz
 
 # Checkout edx-platform code
-ARG EDX_PLATFORM_REPOSITORY=https://github.com/edx/edx-platform.git
+ARG EDX_PLATFORM_REPOSITORY=https://github.com/huaweiUniversity/edx-platform.git
 ARG EDX_PLATFORM_VERSION=open-release/ficus.master
 RUN mkdir -p /openedx/edx-platform && \
     git clone $EDX_PLATFORM_REPOSITORY --branch $EDX_PLATFORM_VERSION --depth 1 /openedx/edx-platform
@@ -39,7 +39,12 @@ RUN virtualenv /openedx/venv
 ENV PATH /openedx/venv/bin:${PATH}
 ENV VIRTUAL_ENV /openedx/venv/
 RUN pip install setuptools==39.0.1 pip==9.0.3
-RUN pip install -r requirements/edx/development.txt
+RUN pip install -r requirements/edx/pre.txt
+RUN pip install -r requirements/edx/github.txt
+RUN pip install -r requirements/edx/local.txt
+RUN pip install -r requirements/edx/base.txt
+RUN pip install -r requirements/edx/post.txt
+RUN pip install -r requirements/edx/paver.txt
 
 # Install patched version of ora2
 RUN pip uninstall -y ora2 && \
@@ -78,7 +83,7 @@ ENV PATH /openedx/bin:${PATH}
 # /openedx/staticfiles.
 RUN openedx-assets xmodule \
     && openedx-assets npm \
-    && openedx-assets webpack --env=prod \
+    && openedx-assets coffeescript \
     && openedx-assets common
 COPY ./themes/ /openedx/themes/
 RUN openedx-assets themes \
