@@ -69,7 +69,7 @@ info:
 	echo $$EDX_PLATFORM_SETTINGS
 
 import-demo-course:
-	$(DOCKER_COMPOSE_RUN_OPENEDX) cms /bin/bash -c "git clone https://github.com/edx/edx-demo-course ../edx-demo-course && git -C ../edx-demo-course checkout open-release/ginkgo.master && python ./manage.py cms import ../data ../edx-demo-course"
+	$(DOCKER_COMPOSE_RUN_OPENEDX) cms /bin/bash -c "git clone https://github.com/edx/edx-demo-course ../edx-demo-course && git -C ../edx-demo-course checkout open-release/ficus.master && python ./manage.py cms import ../data ../edx-demo-course"
 
 create-staff-user:
 	$(DOCKER_COMPOSE_RUN_OPENEDX) lms /bin/bash -c "./manage.py lms manage_user --superuser --staff ${USERNAME} ${EMAIL} && ./manage.py lms changepassword ${USERNAME}"
@@ -109,13 +109,13 @@ android-dockerhub: android-build android-push
 
 build:
 	# We need to build with docker, as long as docker-compose cannot push to dockerhub
-	docker build -t regis/openedx:ginkgo openedx/
-	docker build -t regis/openedx-forum:ginkgo forum/
-	docker build -t regis/openedx-xqueue:ginkgo xqueue/
+	docker build -t regis/openedx:ficus openedx/
+	docker build -t regis/openedx-forum:ficus forum/
+	docker build -t regis/openedx-xqueue:ficus xqueue/
 
 push:
-	docker push regis/openedx:ginkgo
-	docker push regis/openedx-forum:ginkgo
-	docker push regis/openedx-xqueue:ginkgo
+	docker push regis/openedx:ficus
+	docker push regis/openedx-forum:ficus
+	docker push regis/openedx-xqueue:ficus
 
 dockerhub: build push

@@ -23,7 +23,7 @@ WORKDIR /openedx/edx-platform
 
 ## Checkout edx-platform code
 ARG EDX_PLATFORM_REPOSITORY=https://github.com/edx/edx-platform.git
-ARG EDX_PLATFORM_VERSION=open-release/ginkgo.master
+ARG EDX_PLATFORM_VERSION=open-release/ficus.master
 RUN git clone $EDX_PLATFORM_REPOSITORY --branch $EDX_PLATFORM_VERSION --depth 1 .
 
 # Install python requirements (clone source repos in a separate dir, otherwise
