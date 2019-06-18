@@ -28,14 +28,16 @@ ACTIVATE_NOTES: false
 ACTIVATE_RABBITMQ: true
 ACTIVATE_SMTP: true
 ACTIVATE_XQUEUE: false
+OPENEDX_AWS_ACCESS_KEY: ""
+OPENEDX_AWS_SECRET_ACCESS_KEY: ""
 ANDROID_RELEASE_STORE_PASSWORD: "android store password"
 ANDROID_RELEASE_KEY_PASSWORD: "android release key password"
 ANDROID_RELEASE_KEY_ALIAS: "android release key alias"
-DOCKER_IMAGE_OPENEDX: "regis/openedx:ironwood"
-DOCKER_IMAGE_ANDROID: "regis/openedx-android:ironwood"
-DOCKER_IMAGE_FORUM: "regis/openedx-forum:ironwood"
-DOCKER_IMAGE_NOTES: "regis/openedx-notes:ironwood"
-DOCKER_IMAGE_XQUEUE: "regis/openedx-xqueue:ironwood"
+DOCKER_IMAGE_OPENEDX: "regis/openedx:{{ TUTOR_VERSION }}"
+DOCKER_IMAGE_ANDROID: "regis/openedx-android:{{ TUTOR_VERSION }}"
+DOCKER_IMAGE_FORUM: "regis/openedx-forum:{{ TUTOR_VERSION }}"
+DOCKER_IMAGE_NOTES: "regis/openedx-notes:{{ TUTOR_VERSION }}"
+DOCKER_IMAGE_XQUEUE: "regis/openedx-xqueue:{{ TUTOR_VERSION }}"
 DOCKER_IMAGE_MEMCACHED: "memcached:1.4.38"
 DOCKER_IMAGE_MONGODB: "mongo:3.2.16"
 DOCKER_IMAGE_MYSQL: "mysql:5.6.36"
@@ -48,6 +50,7 @@ LOCAL_PROJECT_NAME: "tutor_local"
 ELASTICSEARCH_HOST: "elasticsearch"
 ELASTICSEARCH_PORT: 9200
 FORUM_HOST: "forum"
+K8S_NAMESPACE: "openedx"
 LANGUAGE_CODE: "en"
 MEMCACHED_HOST: "memcached"
 MEMCACHED_PORT: 11211
@@ -66,6 +69,7 @@ NOTES_HOST: "notes.{{ LMS_HOST }}"
 NOTES_MYSQL_DATABASE: "notes"
 NOTES_MYSQL_USERNAME: "notes"
 PLATFORM_NAME: "My Open edX"
+PLUGINS: []
 RABBITMQ_HOST: "rabbitmq"
 RABBITMQ_USERNAME: ""
 RABBITMQ_PASSWORD: ""

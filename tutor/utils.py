@@ -51,6 +51,15 @@ def reverse_host(domain):
     return ".".join(domain.split(".")[::-1])
 
 
+def walk_files(path):
+    """
+    Iterate on file paths located in directory.
+    """
+    for dirpath, _, filenames in os.walk(path):
+        for filename in filenames:
+            yield os.path.join(dirpath, filename)
+
+
 def docker_run(*command):
     return docker("run", "--rm", "-it", *command)
 
@@ -96,3 +105,12 @@ def execute(*command):
             raise exceptions.TutorError(
                 "Command failed with status {}: {}".format(result, " ".join(command))
             )
+
+
+def check_output(*command):
+    click.echo(fmt.command(" ".join(command)))
+    try:
+        return subprocess.check_output(command)
+    except:
+        fmt.echo_error("Command failed: {}".format(" ".join(command)))
+        raise

@@ -19,14 +19,10 @@ RUN curl -L -o /tmp/dockerize.tar.gz https://github.com/jwilder/dockerize/releas
 
 # Checkout edx-platform code
 ARG EDX_PLATFORM_REPOSITORY=https://github.com/edx/edx-platform.git
-ARG EDX_PLATFORM_VERSION=open-release/ironwood.1
+ARG EDX_PLATFORM_VERSION=open-release/ironwood.2
 RUN mkdir -p /openedx/edx-platform && \
     git clone $EDX_PLATFORM_REPOSITORY --branch $EDX_PLATFORM_VERSION --depth 1 /openedx/edx-platform
 WORKDIR /openedx/edx-platform
-
-# Apply patches
-# https://github.com/edx/edx-platform/pull/20325/
-RUN curl https://github.com/edx/edx-platform/commit/14fdc28daa00d07d9176c9dbd85b6a2d7ca3e473.patch | git apply -
 
 # Download extra locales to /openedx/locale
 # TODO upgrade this to ironwood
@@ -44,6 +40,10 @@ ENV PATH /openedx/venv/bin:${PATH}
 ENV VIRTUAL_ENV /openedx/venv/
 RUN pip install setuptools==39.0.1 pip==9.0.3
 RUN pip install -r requirements/edx/development.txt
+
+# Install patched version of ora2
+RUN pip uninstall -y ora2 && \
+    pip install git+https://github.com/regisb/edx-ora2.git@2.2.0-patched#egg=ora2==2.2.0
 
 # Install a recent version of nodejs
 RUN nodeenv /openedx/nodeenv --node=8.9.3 --prebuilt
@@ -83,6 +83,9 @@ RUN openedx-assets xmodule \
 COPY ./themes/ /openedx/themes/
 RUN openedx-assets themes \
     && openedx-assets collect --settings=tutor.assets
+
+# Create a data directory, which might be used (or not)
+RUN mkdir /openedx/data
 
 # service variant is "lms" or "cms"
 ENV SERVICE_VARIANT lms

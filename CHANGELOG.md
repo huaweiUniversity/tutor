@@ -1,13 +1,21 @@
 # Changelog
 
-## Latest
+Note: Breaking changes between versions are indicated by "💥".
 
+## 3.4.0 (2019-06-17)
+
+- [Feature] Creation of a plugin system
+- [Feature] Kubernetes support out of beta
+- [Improvement] Switch to pinned image tags for easier upgrades
+- 💥[Improvement] Remove the `-y/--yes` option: `tutor config save` is now non-interactive by default. Use `-i/--interactive` to force interactive mode.
+- 💥[Improvement] Replace the `databases` command by `init`.
+- [Improvement] Upgrade to ironwood.2
 - [Improvement] Add `-y/--yes` option to `local quickstart` for non-interactive quickstart
 - [Improvement] Persist LMS/CMS logs to disk by default (with collaboration from @silviot 💪)
 - [Bugfix] Fix installing a locally cloned requirement repository
 - [Improvement] Add `--no-cache` option to `images build`
 - [Improvement] Make it possible to configure the notes service hostname
-- [Improvement] Better, more robust MySQL initialization
+- [Improvement] Better, more robust MySQL initialisation
 
 ## 3.3.10 (2019-05-15)
 
@@ -127,7 +135,7 @@
 
 ## 3.0.1 (2019-02-11)
 
-- [Bugfix] fix mysql initialization (#159, #160)
+- [Bugfix] fix mysql initialisation (#159, #160)
 - [Improvement] Better handling of continuous integration
 - [Bugfix] fix `tutor --version` (#156)
 - [Improvement] Absolute settings imports -- 📯 thanks @tonytan4ever!

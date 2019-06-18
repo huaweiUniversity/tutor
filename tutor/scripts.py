@@ -1,6 +1,7 @@
 from . import env
 from . import exceptions
 from . import fmt
+from . import plugins
 
 
 class BaseRunner:
@@ -8,13 +9,12 @@ class BaseRunner:
         self.root = root
         self.config = config
 
-    def render(self, script, config=None):
-        config = config or self.config
-        return env.render_file(config, "scripts", script).strip()
-
-    def run(self, service, script, config=None):
-        command = self.render(script, config=config)
+    def run(self, service, *path):
+        command = self.render(*path)
         self.exec(service, command)
+
+    def render(self, *path):
+        return env.render_file(self.config, *path).strip()
 
     def exec(self, service, command):
         raise NotImplementedError
@@ -30,47 +30,43 @@ class BaseRunner:
     def is_activated(self, service):
         return self.config["ACTIVATE_" + service.upper()]
 
-
-def migrate(runner):
-    fmt.echo_info("Creating all databases...")
-    runner.run("mysql-client", "create_databases.sh")
-
-    if runner.is_activated("lms"):
-        fmt.echo_info("Running lms migrations...")
-        runner.run("lms", "migrate_lms.sh")
-    if runner.is_activated("cms"):
-        fmt.echo_info("Running cms migrations...")
-        runner.run("cms", "migrate_cms.sh")
-    if runner.is_activated("forum"):
-        fmt.echo_info("Running forum migrations...")
-        runner.run("forum", "migrate_forum.sh")
-    if runner.is_activated("notes"):
-        fmt.echo_info("Running notes migrations...")
-        runner.run("notes", "migrate_django.sh")
-    if runner.is_activated("xqueue"):
-        fmt.echo_info("Running xqueue migrations...")
-        runner.run("xqueue", "migrate_django.sh")
-    if runner.is_activated("lms"):
-        fmt.echo_info("Creating oauth2 users...")
-        runner.run("lms", "oauth2.sh")
-    fmt.echo_info("Databases ready.")
+    def iter_plugin_hooks(self, hook):
+        yield from plugins.iter_hooks(self.config, hook)
 
 
-def create_user(runner, superuser, staff, name, email):
-    runner.check_service_is_activated("lms")
-    config = {"OPTS": "", "USERNAME": name, "EMAIL": email}
+def initialise(runner):
+    fmt.echo_info("Initialising all services...")
+    runner.run("mysql-client", "hooks", "mysql-client", "init")
+    for service in ["lms", "cms", "forum", "notes", "xqueue"]:
+        if runner.is_activated(service):
+            fmt.echo_info("Initialising {}...".format(service))
+            runner.run(service, "hooks", service, "init")
+    for plugin_name, service in runner.iter_plugin_hooks("init"):
+        fmt.echo_info(
+            "Plugin {}: running init for service {}...".format(plugin_name, service)
+        )
+        runner.run(service, plugin_name, "hooks", service, "init")
+    fmt.echo_info("All services initialised.")
+
+
+def create_user_command(superuser, staff, username, email):
+    opts = ""
     if superuser:
-        config["OPTS"] += " --superuser"
+        opts += " --superuser"
     if staff:
-        config["OPTS"] += " --staff"
-    runner.run("lms", "create_user.sh", config=config)
+        opts += " --staff"
+    command = (
+        "./manage.py lms --settings=tutor.production manage_user {opts} {username} {email}\n"
+        "./manage.py lms --settings=tutor.production changepassword {username}"
+    ).format(opts=opts, username=username, email=email)
+    return command
 
 
 def import_demo_course(runner):
     runner.check_service_is_activated("cms")
-    runner.run("cms", "import_demo_course.sh")
+    runner.run("cms", "hooks", "cms", "importdemocourse")
 
 
 def index_courses(runner):
     runner.check_service_is_activated("cms")
-    runner.run("cms", "index_courses.sh")
+    runner.run("cms", "hooks", "cms", "indexcourses")

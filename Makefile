@@ -1,5 +1,6 @@
 .DEFAULT_GOAL := help
-BLACK_OPTS = --exclude templates ./tutor ./tests
+SRC_DIRS = ./tutor ./tests ./plugins ./bin
+BLACK_OPTS = --exclude templates ${SRC_DIRS}
 
 ###### Development
 
@@ -14,10 +15,15 @@ test-format: ## Run code formatting tests
 	black --check --diff $(BLACK_OPTS)
 
 test-lint: ## Run code linting tests
-	pylint --errors-only tutor
+	pylint --errors-only ${SRC_DIRS}
 
-test-unit: ## Run unit tests
+test-unit: test-unit-core test-unit-plugins ## Run unit tests
+
+test-unit-core:
 	python3 -m unittest discover tests
+
+test-unit-plugins:
+	python3 -m unittest discover plugins/minio/tests
 
 format: ## Format code automatically
 	black $(BLACK_OPTS)
@@ -25,7 +31,7 @@ format: ## Format code automatically
 ###### Deployment
 
 bundle: ## Bundle the tutor package in a single "dist/tutor" executable
-	pyinstaller --onefile --name=tutor --add-data=./tutor/templates:./tutor/templates ./bin/main
+	pyinstaller --onefile --name=tutor --add-data=./tutor/templates:./tutor/templates ./bin/main.py
 dist/tutor:
 	$(MAKE) bundle
 
@@ -52,14 +58,15 @@ ci-info: ## Print info about environment
 ci-install: ## Install requirements
 	pip3 install -U setuptools
 	pip3 install -r requirements/dev.txt
+	pip3 install -r requirements/plugins.txt
 
 ci-bundle: ## Create bundle and run basic tests
 	$(MAKE) bundle
 	mkdir -p releases/
 	./dist/tutor --version
 	./dist/tutor config printroot
-	yes "" | ./dist/tutor config save
-	./dist/tutor config save --yes --set ACTIVATE_NOTES=true --set ACTIVATE_XQUEUE=true
+	yes "" | ./dist/tutor config save --interactive
+	./dist/tutor config save --set ACTIVATE_NOTES=true --set ACTIVATE_XQUEUE=true
 
 ./releases/github-release: ## Download github-release binary
 	cd releases/ \
@@ -88,7 +95,7 @@ ci-github: ./releases/github-release ## Upload assets to github
 ci-images: ## Build and push docker images to hub.docker.com
 	python setup.py develop
 	tutor images build all
-	tutor local databases
+	tutor local init
 	docker login -u "$$DOCKER_USERNAME" -p "$$DOCKER_PASSWORD"
 	tutor images push all
 

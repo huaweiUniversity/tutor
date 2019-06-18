@@ -23,7 +23,7 @@ By default, this file contains only the required configuration parameters for ru
 
 Alternatively, you can set each parameter from the command line::
 
-    tutor config save -y --set PARAM1=VALUE1 --set PARAM2=VALUE2
+    tutor config save --set PARAM1=VALUE1 --set PARAM2=VALUE2
 
 Or from the system environment::
 
@@ -61,13 +61,13 @@ Docker
 Custom images
 *************
 
-- ``DOCKER_IMAGE_OPENEDX`` (default: ``"regis/openedx:ironwood"``)
-- ``DOCKER_IMAGE_ANDROID`` (default: ``"regis/openedx-android:ironwood"``)
-- ``DOCKER_IMAGE_FORUM`` (default: ``"regis/openedx-forum:ironwood"``)
-- ``DOCKER_IMAGE_NOTES`` (default: ``"regis/openedx-notes:ironwood"``)
-- ``DOCKER_IMAGE_XQUEUE`` (default: ``"regis/openedx-xqueue:ironwood"``)
+- ``DOCKER_IMAGE_OPENEDX`` (default: ``"regis/openedx:{{ TUTOR_VERSION }}"``)
+- ``DOCKER_IMAGE_ANDROID`` (default: ``"regis/openedx-android:{{ TUTOR_VERSION }}"``)
+- ``DOCKER_IMAGE_FORUM`` (default: ``"regis/openedx-forum:{{ TUTOR_VERSION }}"``)
+- ``DOCKER_IMAGE_NOTES`` (default: ``"regis/openedx-notes:{{ TUTOR_VERSION }}"``)
+- ``DOCKER_IMAGE_XQUEUE`` (default: ``"regis/openedx-xqueue:{{ TUTOR_VERSION }}"``)
 
-These configuration parameters define which image to run for each service.
+These configuration parameters define which image to run for each service. By default, the docker image tag matches the Tutor version it was built with.
 
 Custom registry
 ***************
@@ -82,6 +82,15 @@ You may want to pull/push images from/to a custom docker registry. For instance,
 
 Vendor services
 ~~~~~~~~~~~~~~~
+
+Nginx
+*****
+
+- ``NGINX_HTTP_PORT`` (default: ``80``)
+- ``NGINX_HTTPS_PORT`` (default: ``443``)
+- ``WEB_PROXY`` (default: ``true``)
+
+Nginx is used to route web traffic to the various applications and to serve static assets. In case there is another web server in front of the Nginx container (for instance, a web server running on the host or an Ingress controller on Kubernetes), the container exposed ports can be modified. If ``WEB_PROXY`` is set to ``true`` then we assume that SSL termination does not occur in the Nginx container.
 
 MySQL
 *****
@@ -139,7 +148,7 @@ SMTP
 Optional features
 ~~~~~~~~~~~~~~~~~
 
-Some optional features may be activated or deactivated during the interactive configuration step (``tutor config save``).
+Some optional features may be activated or deactivated during the interactive configuration step (``tutor config save -i``).
 
 SSL/TLS certificates for HTTPS access
 *************************************
@@ -264,7 +273,7 @@ Running a different ``openedx`` Docker image
 
 By default, Tutor runs the `regis/openedx <https://hub.docker.com/r/regis/openedx/>`_ docker image from Docker Hub. If you have an account on `hub.docker.com <https://hub.docker.com>`_ or you have a private image registry, you can build your image and push it to your registry with::
 
-    tutor config save -y --set DOCKER_IMAGE_OPENEDX=myusername/openedx:mytag
+    tutor config save --set DOCKER_IMAGE_OPENEDX=myusername/openedx:mytag
     tutor images build openedx
     tutor images push openedx
 

@@ -3,15 +3,16 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: cms
+  labels:
+    app.kubernetes.io/name: cms
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: cms
+      app.kubernetes.io/name: cms
   template:
     metadata:
       labels:
-        app: cms
+        app.kubernetes.io/name: cms
     spec:
       containers:
         - name: cms
@@ -28,9 +29,9 @@ spec:
               name: settings-cms
             - mountPath: /openedx/config
               name: config
-            - mountPath: /openedx/data
-              name: data
-          #imagePullPolicy: Always
+          resources:
+            requests:
+              memory: 2Gi
       volumes:
         - name: settings-lms
           configMap:
@@ -41,51 +42,95 @@ spec:
         - name: config
           configMap:
             name: openedx-config
-        - name: data
-          persistentVolumeClaim:
-            claimName: cms-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cms-worker
+  labels:
+    app.kubernetes.io/name: cms-worker
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cms-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cms-worker
+    spec:
+      containers:
+        - name: cms-worker
+          image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_OPENEDX }}
+          args: ["./manage.py", "cms", "celery", "worker", "--loglevel=info", "--hostname=edx.cms.core.default.%%h", "--maxtasksperchild", "100"]
+          env:
+          - name: SERVICE_VARIANT
+            value: cms
+          - name: C_FORCE_ROOT
+            value: "1"
+          volumeMounts:
+            - mountPath: /openedx/edx-platform/lms/envs/tutor/
+              name: settings-lms
+            - mountPath: /openedx/edx-platform/cms/envs/tutor/
+              name: settings-cms
+            - mountPath: /openedx/config
+              name: config
+      volumes:
+        - name: settings-lms
+          configMap:
+            name: openedx-settings-lms
+        - name: settings-cms
+          configMap:
+            name: openedx-settings-cms
+        - name: config
+          configMap:
+            name: openedx-config
 {% if ACTIVATE_FORUM %}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: forum
+  labels:
+    app.kubernetes.io/name: forum
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: forum
+      app.kubernetes.io/name: forum
   template:
     metadata:
       labels:
-        app: forum
+        app.kubernetes.io/name: forum
     spec:
       containers:
         - name: forum
           image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_FORUM }}
           ports:
             - containerPort: 4567
-          imagePullPolicy: Always
           env:
             - name: SEARCH_SERVER
               value: "http://{{ ELASTICSEARCH_HOST }}:{{ ELASTICSEARCH_PORT }}"
-            - name: MONGOHQ_URL
-              value: "mongodb://{% if MONGODB_USERNAME and MONGODB_PASSWORD %}{{ MONGODB_USERNAME}}:{{ MONGODB_PASSWORD }}@{% endif %}{{ MONGODB_HOST }}:{{ MONGODB_PORT }}/cs_comments_service"
+            - name: MONGODB_AUTH
+              value: "{% if MONGODB_USERNAME and MONGODB_PASSWORD %}{{ MONGODB_USERNAME}}:{{ MONGODB_PASSWORD }}@{% endif %}"
+            - name: MONGODB_HOST
+              value: "{{ MONGODB_HOST }}"
+            - name: MONGODB_PORT
+              value: "{{ MONGODB_PORT }}"
 {% endif %}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: lms
+  labels:
+    app.kubernetes.io/name: lms
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: lms
+      app.kubernetes.io/name: lms
   template:
     metadata:
       labels:
-        app: lms
+        app.kubernetes.io/name: lms
     spec:
       containers:
         - name: lms
@@ -99,9 +144,9 @@ spec:
               name: settings-cms
             - mountPath: /openedx/config
               name: config
-            - mountPath: /openedx/data
-              name: data
-          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: 2Gi
       volumes:
         - name: settings-lms
           configMap:
@@ -112,24 +157,66 @@ spec:
         - name: config
           configMap:
             name: openedx-config
-        - name: data
-          persistentVolumeClaim:
-            claimName: lms-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lms-worker
+  labels:
+    app.kubernetes.io/name: lms-worker
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lms-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lms-worker
+    spec:
+      containers:
+        - name: lms-worker
+          image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_OPENEDX }}
+          args: ["./manage.py", "lms", "celery", "worker", "--loglevel=info", "--hostname=edx.lms.core.default.%%h", "--maxtasksperchild", "100"]
+          env:
+          - name: SERVICE_VARIANT
+            value: lms
+          - name: C_FORCE_ROOT
+            value: "1"
+          volumeMounts:
+            - mountPath: /openedx/edx-platform/lms/envs/tutor/
+              name: settings-lms
+            - mountPath: /openedx/edx-platform/cms/envs/tutor/
+              name: settings-cms
+            - mountPath: /openedx/config
+              name: config
+      volumes:
+        - name: settings-lms
+          configMap:
+            name: openedx-settings-lms
+        - name: settings-cms
+          configMap:
+            name: openedx-settings-cms
+        - name: config
+          configMap:
+            name: openedx-config
 {% if ACTIVATE_ELASTICSEARCH %}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: elasticsearch
+  labels:
+    app.kubernetes.io/name: elasticearch
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: elasticsearch
+      app.kubernetes.io/name: elasticsearch
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
-        app: elasticsearch
+        app.kubernetes.io/name: elasticsearch
     spec:
       containers:
         - name: elasticsearch
@@ -157,15 +244,16 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: memcached
+  labels:
+    app.kubernetes.io/name: memcached
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: memcached
+      app.kubernetes.io/name: memcached
   template:
     metadata:
       labels:
-        app: memcached
+        app.kubernetes.io/name: memcached
     spec:
       containers:
         - name: memcached
@@ -179,28 +267,33 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mongodb
+  labels:
+    app.kubernetes.io/name: mongodb
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: mongodb
+      app.kubernetes.io/name: mongodb
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
-        app: mongodb
+        app.kubernetes.io/name: mongodb
     spec:
       containers:
         - name: mongodb
           image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_MONGODB }}
-          command: ["mongod", "--smallfiles", "--nojournal", "--storageEngine", "wiredTiger"]
+          args: ["mongod", "--smallfiles", "--nojournal", "--storageEngine", "wiredTiger"]
           ports:
             - containerPort: 27017
           volumeMounts:
             - mountPath: /data/db
               name: data
+
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: mongodb
 {% endif %}
 {% if ACTIVATE_MYSQL %}
 ---
@@ -208,19 +301,23 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: mysql
+      app.kubernetes.io/name: mysql
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
-        app: mysql
+        app.kubernetes.io/name: mysql
     spec:
       containers:
         - name: mysql
           image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_MYSQL }}
+          args: ["mysqld", "--character-set-server=utf8", "--collation-server=utf8_general_ci"]
           env:
             - name: MYSQL_ROOT_PASSWORD
               valueFrom:
@@ -237,21 +334,77 @@ spec:
           persistentVolumeClaim:
             claimName: mysql
 {% endif %}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql-client
+  labels:
+    app.kubernetes.io/name: mysql-client
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mysql-client
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mysql-client
+    spec:
+      containers:
+        - name: mysql
+          image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_MYSQL }}
+          command: ["sh", "-e", "-c"]
+          args: ["while true; do echo 'ready'; sleep 10; done"]
+{% if ACTIVATE_NOTES %}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notes
+  labels:
+    app.kubernetes.io/name: notes
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notes
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: notes
+    spec:
+      containers:
+        - name: notes
+          image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_NOTES }}
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DJANGO_SETTINGS_MODULE
+              value: notesserver.settings.tutor
+          volumeMounts:
+            - mountPath: /openedx/edx-notes-api/notesserver/settings/tutor.py
+              name: settings
+              subPath: tutor.py
+      volumes:
+        - name: settings
+          configMap:
+            name: notes-settings
+{% endif %}
 {% if ACTIVATE_SMTP %}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: smtp
+  labels:
+    app.kubernetes.io/name: smtp
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: smtp
+      app.kubernetes.io/name: smtp
   template:
     metadata:
       labels:
-        app: smtp
+        app.kubernetes.io/name: smtp
     spec:
       containers:
         - name: smtp
@@ -264,31 +417,30 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: nginx
+  labels:
+    app.kubernetes.io/name: nginx
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: nginx
+      app.kubernetes.io/name: nginx
   template:
     metadata:
       labels:
-        app: nginx
+        app.kubernetes.io/name: nginx
     spec:
       initContainers:
         - name: clean-openedx-staticfiles
           image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_OPENEDX }}
-          command: ['rm', '-rf', '/var/www/openedx/staticfiles']
+          args: ['rm', '-rf', '/var/www/openedx/staticfiles']
           volumeMounts:
             - mountPath: /var/www/openedx/
               name: openedx-staticfiles
-          imagePullPolicy: Always
         - name: init-openedx-staticfiles
           image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_OPENEDX }}
-          command: ['cp', '-r', '/openedx/staticfiles', '/var/www/openedx/']
+          args: ['cp', '-r', '/openedx/staticfiles', '/var/www/openedx/']
           volumeMounts:
             - mountPath: /var/www/openedx/
               name: openedx-staticfiles
-          imagePullPolicy: Always
       containers:
         - name: nginx
           image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_NGINX }}
@@ -297,38 +449,44 @@ spec:
               name: config
             - mountPath: /var/www/openedx/
               name: openedx-staticfiles
+              readOnly: true
+            - mountPath: /openedx/data/cms
+              name: data-cms
+              readOnly: true
             - mountPath: /openedx/data/lms
-              name: data
+              name: data-lms
+              readOnly: true
           ports:
             - containerPort: 80
-              name: http-port
             - containerPort: 443
-              name: https-port
       volumes:
         - name: config
           configMap:
             name: nginx-config
         - name: openedx-staticfiles
-          persistentVolumeClaim:
-            claimName: openedx-staticfiles
-        - name: data
-          persistentVolumeClaim:
-            claimName: lms-data
+          emptyDir: {}
+        - name: data-cms
+          emptyDir: {}
+        - name: data-lms
+          emptyDir: {}
 {% if ACTIVATE_RABBITMQ %}
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: rabbitmq
+  labels:
+    app.kubernetes.io/name: rabbitmq
 spec:
-  replicas: 1
   selector:
     matchLabels:
-      app: rabbitmq
+      app.kubernetes.io/name: rabbitmq
+  strategy:
+    type: Recreate
   template:
     metadata:
       labels:
-        app: rabbitmq
+        app.kubernetes.io/name: rabbitmq
     spec:
       containers:
         - name: rabbitmq
@@ -343,3 +501,49 @@ spec:
           persistentVolumeClaim:
             claimName: rabbitmq
 {% endif %}
+{% if ACTIVATE_XQUEUE %}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: xqueue
+  labels:
+    app.kubernetes.io/name: xqueue
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: xqueue
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: xqueue
+    spec:
+      containers:
+        - name: xqueue
+          image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_XQUEUE }}
+          ports:
+            - containerPort: 8040
+          env:
+            - name: DJANGO_SETTINGS_MODULE
+              value: xqueue.tutor
+          volumeMounts:
+            - mountPath: /openedx/xqueue/xqueue/tutor.py
+              name: settings
+              subPath: tutor.py
+        - name: xqueue-consumer
+          image: {{ DOCKER_REGISTRY }}{{ DOCKER_IMAGE_XQUEUE }}
+          command: ["sh", "-e", "-c"]
+          args: ["while true; do echo 'running consumers'; ./manage.py run_consumer; sleep 10; done"]
+          env:
+            - name: DJANGO_SETTINGS_MODULE
+              value: xqueue.tutor
+          volumeMounts:
+            - mountPath: /openedx/xqueue/xqueue/tutor.py
+              name: settings
+              subPath: tutor.py
+      volumes:
+        - name: settings
+          configMap:
+            name: xqueue-settings
+{% endif %}
+{{ patch("k8s-deployments") }}

@@ -6,6 +6,7 @@ import jinja2
 
 from . import exceptions
 from . import fmt
+from . import plugins
 from . import utils
 from .__about__ import __version__
 
@@ -18,15 +19,19 @@ class Renderer:
     ENVIRONMENT = None
 
     @classmethod
-    def environment(cls):
+    def environment(cls, config):
         if not cls.ENVIRONMENT:
+            template_roots = [TEMPLATES_ROOT]
+            for _, plugin_templates in plugins.iter_templates(config):
+                template_roots.append(plugin_templates)
             environment = jinja2.Environment(
-                loader=jinja2.FileSystemLoader(TEMPLATES_ROOT),
+                loader=jinja2.FileSystemLoader(template_roots),
                 undefined=jinja2.StrictUndefined,
             )
             environment.filters["random_string"] = utils.random_string
             environment.filters["common_domain"] = utils.common_domain
             environment.filters["reverse_host"] = utils.reverse_host
+            environment.filters["walk_templates"] = walk_templates
             environment.globals["TUTOR_VERSION"] = __version__
             cls.ENVIRONMENT = environment
 
@@ -38,14 +43,18 @@ class Renderer:
 
     @classmethod
     def render_str(cls, config, text):
-        template = cls.environment().from_string(text)
-        return cls.__render(template, config)
+        template = cls.environment(config).from_string(text)
+        return cls.__render(config, template)
 
     @classmethod
     def render_file(cls, config, path):
-        template = cls.environment().get_template(path)
         try:
-            return cls.__render(template, config)
+            template = cls.environment(config).get_template(path)
+        except:
+            fmt.echo_error("Error loading template " + path)
+            raise
+        try:
+            return cls.__render(config, template)
         except (jinja2.exceptions.TemplateError, exceptions.TutorError):
             fmt.echo_error("Error rendering template " + path)
             raise
@@ -54,13 +63,39 @@ class Renderer:
             raise
 
     @classmethod
-    def __render(cls, template, config):
+    def __render(cls, config, template):
+        def patch(name, separator="\n", suffix=""):
+            return cls.__render_patch(config, name, separator=separator, suffix=suffix)
+
         try:
-            return template.render(**config)
+            return template.render(patch=patch, **config)
         except jinja2.exceptions.UndefinedError as e:
             raise exceptions.TutorError(
                 "Missing configuration value: {}".format(e.args[0])
             )
+
+    @classmethod
+    def __render_patch(cls, config, name, separator="\n", suffix=""):
+        patches = []
+        for plugin, patch in plugins.iter_patches(config, name):
+            patch_template = cls.environment(config).from_string(patch)
+            try:
+                patches.append(patch_template.render(**config))
+            except jinja2.exceptions.UndefinedError as e:
+                raise exceptions.TutorError(
+                    "Missing configuration value: {} in patch '{}' from plugin {}".format(
+                        e.args[0], name, plugin
+                    )
+                )
+        rendered = separator.join(patches)
+        if rendered:
+            rendered += suffix
+        return rendered
+
+
+def save(root, config):
+    render_full(root, config)
+    fmt.echo_info("Environment generated in {}".format(base_dir(root)))
 
 
 def render_full(root, config):
@@ -71,6 +106,7 @@ def render_full(root, config):
         save_subdir(subdir, root, config)
     copy_subdir("build", root)
     save_file(VERSION_FILENAME, root, config)
+    save_file("kustomization.yml", root, config)
 
 
 def save_subdir(subdir, root, config):
@@ -118,6 +154,12 @@ def render_dict(config):
         config[k] = v
 
 
+def render_unknown(config, value):
+    if isinstance(value, str):
+        return render_str(config, value)
+    return value
+
+
 def render_str(config, text):
     """
     Args:
@@ -140,6 +182,18 @@ def copy_subdir(subdir, root):
         dst = pathjoin(root, path)
         utils.ensure_file_directory_exists(dst)
         shutil.copy(src, dst)
+
+
+def check_is_up_to_date(root):
+    if not is_up_to_date(root):
+        message = (
+            "The current environment stored at {} is not up-to-date: it is at "
+            "v{} while the 'tutor' binary is at v{}. You should upgrade "
+            "the environment by running:\n"
+            "\n"
+            "    tutor config save"
+        )
+        fmt.echo_alert(message.format(base_dir(root), version(root), __version__))
 
 
 def is_up_to_date(root):
@@ -194,6 +248,7 @@ def is_part_of_env(path):
         basename.startswith(".")
         or basename.endswith(".pyc")
         or basename == "__pycache__"
+        or basename == "partials"
     )
 
 

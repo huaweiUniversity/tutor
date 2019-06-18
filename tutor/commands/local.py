@@ -2,9 +2,10 @@ from textwrap import indent
 
 import click
 
-from . import config as tutor_config
+from .. import config as tutor_config
 from .. import env as tutor_env
 from .. import fmt
+from .. import interactive as interactive_config
 from .. import opts
 from .. import scripts
 from .. import utils
@@ -19,21 +20,23 @@ def local():
 
 
 @click.command(help="Configure and run Open edX from scratch")
-@click.option("-y", "--yes", "silent", is_flag=True, help="Run non-interactively")
+@opts.root
+@click.option("-I", "--non-interactive", is_flag=True, help="Run non-interactively")
 @click.option(
     "-p", "--pullimages", "pullimages_", is_flag=True, help="Update docker images"
 )
-@opts.root
-def quickstart(silent, pullimages_, root):
+def quickstart(root, non_interactive, pullimages_):
     click.echo(fmt.title("Interactive platform configuration"))
-    tutor_config.save(root, silent=silent)
+    config = interactive_config.update(root, interactive=(not non_interactive))
+    click.echo(fmt.title("Updating the current environment"))
+    tutor_env.save(root, config)
     click.echo(fmt.title("Stopping any existing platform"))
     stop.callback(root)
     if pullimages_:
         click.echo(fmt.title("Docker image updates"))
         pullimages.callback(root)
     click.echo(fmt.title("Database creation and migrations"))
-    databases.callback(root)
+    init.callback(root)
     click.echo(fmt.title("HTTPS certificates generation"))
     https_create.callback(root)
     click.echo(fmt.title("Starting the platform in detached mode"))
@@ -111,11 +114,15 @@ def restart(root, service):
     context_settings={"ignore_unknown_options": True},
 )
 @opts.root
+@click.option("--entrypoint", help="Override the entrypoint of the image")
 @click.argument("service")
 @click.argument("command", default=None, required=False)
 @click.argument("args", nargs=-1, required=False)
-def run(root, service, command, args):
-    run_command = ["run", "--rm", service]
+def run(root, entrypoint, service, command, args):
+    run_command = ["run", "--rm"]
+    if entrypoint:
+        run_command += ["--entrypoint", entrypoint]
+    run_command.append(service)
     if command:
         run_command.append(command)
     if args:
@@ -140,12 +147,12 @@ def execute(root, service, command, args):
     docker_compose(root, config, *exec_command)
 
 
-@click.command(help="Create databases and run database migrations")
+@click.command(help="Initialise all applications")
 @opts.root
-def databases(root):
+def init(root):
     config = tutor_config.load(root)
     runner = ScriptRunner(root, config)
-    scripts.migrate(runner)
+    scripts.initialise(runner)
 
 
 @click.group(help="Manage https certificates")
@@ -169,7 +176,7 @@ def https_create(root):
         fmt.echo_info("HTTPS is not activated: certificate generation skipped")
         return
 
-    script = runner.render("https_create.sh")
+    script = runner.render("hooks", "certbot", "create")
 
     if config["WEB_PROXY"]:
         fmt.echo_info(
@@ -252,7 +259,9 @@ def logs(root, follow, tail, service):
 def createuser(root, superuser, staff, name, email):
     config = tutor_config.load(root)
     runner = ScriptRunner(root, config)
-    scripts.create_user(runner, superuser, staff, name, email)
+    runner.check_service_is_activated("lms")
+    command = scripts.create_user_command(superuser, staff, name, email)
+    runner.exec("lms", command)
 
 
 @click.command(help="Import the demo course")
@@ -298,7 +307,14 @@ def portainer(root, port):
 class ScriptRunner(scripts.BaseRunner):
     def exec(self, service, command):
         docker_compose(
-            self.root, self.config, "run", "--rm", service, "sh", "-e", "-c", command
+            self.root,
+            self.config,
+            "run",
+            "--rm",
+            "--entrypoint",
+            "sh -e -c",
+            service,
+            command,
         )
 
 
@@ -322,7 +338,7 @@ local.add_command(stop)
 local.add_command(restart)
 local.add_command(run)
 local.add_command(execute, name="exec")
-local.add_command(databases)
+local.add_command(init)
 local.add_command(https)
 local.add_command(logs)
 local.add_command(createuser)

@@ -1,9 +1,9 @@
 import click
 
-from . import config as tutor_config
+from .. import config as tutor_config
 from .. import env as tutor_env
-from .. import exceptions
 from .. import fmt
+from .. import interactive as interactive_config
 from .. import opts
 from .. import scripts
 from .. import utils
@@ -16,92 +16,92 @@ def k8s():
 
 @click.command(help="Configure and run Open edX from scratch")
 @opts.root
-def quickstart(root):
+@click.option("-I", "--non-interactive", is_flag=True, help="Run non-interactively")
+def quickstart(root, non_interactive):
     click.echo(fmt.title("Interactive platform configuration"))
-    tutor_config.save(root)
-    click.echo(fmt.title("Stopping any existing platform"))
-    stop.callback()
+    config = interactive_config.update(root, interactive=(not non_interactive))
+    if config["ACTIVATE_HTTPS"] and not config["WEB_PROXY"]:
+        fmt.echo_alert(
+            "Potentially invalid configuration: ACTIVATE_HTTPS=true WEB_PROXY=false\n"
+            "You should either disable HTTPS support or configure your platform to use"
+            " a web proxy. See the Kubernetes section in the Tutor documentation for"
+            " more information."
+        )
+    click.echo(fmt.title("Updating the current environment"))
+    tutor_env.save(root, config)
     click.echo(fmt.title("Starting the platform"))
     start.callback(root)
-    click.echo(
-        fmt.title(
-            "Running migrations. NOTE: this might fail. If it does, please retry 'tutor k8s databases' later"
-        )
-    )
-    databases.callback(root)
+    click.echo(fmt.title("Database creation and migrations"))
+    init.callback(root)
 
 
 @click.command(help="Run all configured Open edX services")
 @opts.root
 def start(root):
-    config = tutor_config.load(root)
-    kubectl_no_fail("create", "-f", tutor_env.pathjoin(root, "k8s", "namespace.yml"))
-
-    kubectl(
-        "create",
-        "configmap",
-        "nginx-config",
-        "--from-file",
-        tutor_env.pathjoin(root, "apps", "nginx"),
+    # Create namespace
+    utils.kubectl(
+        "apply",
+        "--kustomize",
+        tutor_env.pathjoin(root),
+        "--wait",
+        "--selector",
+        "app.kubernetes.io/component=namespace",
     )
-    if config["ACTIVATE_MYSQL"]:
-        kubectl(
-            "create",
-            "configmap",
-            "mysql-config",
-            "--from-env-file",
-            tutor_env.pathjoin(root, "apps", "mysql", "auth.env"),
-        )
-    kubectl(
-        "create",
-        "configmap",
-        "openedx-settings-lms",
-        "--from-file",
-        tutor_env.pathjoin(root, "apps", "openedx", "settings", "lms"),
+    # Create volumes
+    utils.kubectl(
+        "apply",
+        "--kustomize",
+        tutor_env.pathjoin(root),
+        "--wait",
+        "--selector",
+        "app.kubernetes.io/component=volume",
     )
-    kubectl(
-        "create",
-        "configmap",
-        "openedx-settings-cms",
-        "--from-file",
-        tutor_env.pathjoin(root, "apps", "openedx", "settings", "cms"),
-    )
-    kubectl(
-        "create",
-        "configmap",
-        "openedx-config",
-        "--from-file",
-        tutor_env.pathjoin(root, "apps", "openedx", "config"),
-    )
-
-    kubectl("create", "-f", tutor_env.pathjoin(root, "k8s", "volumes.yml"))
-    kubectl("create", "-f", tutor_env.pathjoin(root, "k8s", "ingress.yml"))
-    kubectl("create", "-f", tutor_env.pathjoin(root, "k8s", "services.yml"))
-    kubectl("create", "-f", tutor_env.pathjoin(root, "k8s", "deployments.yml"))
+    # Create everything else
+    utils.kubectl("apply", "--kustomize", tutor_env.pathjoin(root))
 
 
 @click.command(help="Stop a running platform")
-def stop():
-    kubectl("delete", "deployments,services,ingress,configmaps", "--all")
+@opts.root
+def stop(root):
+    config = tutor_config.load(root)
+    utils.kubectl(
+        "delete", *resource_selector(config), "deployments,services,ingress,configmaps"
+    )
+
+
+def resource_selector(config, *selectors):
+    """
+    Convenient utility for filtering only the resources that belong to this project.
+    """
+    selector = ",".join(
+        ["app.kubernetes.io/instance=openedx-" + config["ID"]] + list(selectors)
+    )
+    return ["--namespace", config["K8S_NAMESPACE"], "--selector=" + selector]
 
 
 @click.command(help="Completely delete an existing platform")
+@opts.root
 @click.option("-y", "--yes", is_flag=True, help="Do not ask for confirmation")
-def delete(yes):
+def delete(root, yes):
     if not yes:
         click.confirm(
             "Are you sure you want to delete the platform? All data will be removed.",
             abort=True,
         )
-    kubectl("delete", "namespace", K8s.NAMESPACE)
+    utils.kubectl(
+        "delete", "-k", tutor_env.pathjoin(root), "--ignore-not-found=true", "--wait"
+    )
 
 
-@click.command(help="Create databases and run database migrations")
+@click.command(help="Initialise all applications")
 @opts.root
-def databases(root):
+def init(root):
     config = tutor_config.load(root)
     runner = K8sScriptRunner(root, config)
-    scripts.migrate(runner)
+    for service in ["mysql", "elasticsearch", "mongodb"]:
+        if runner.is_activated(service):
+            wait_for_pod_ready(config, service)
+    scripts.initialise(runner)
 
 
 @click.command(help="Create an Open edX user and interactively set their password")
@@ -113,7 +113,9 @@ def databases(root):
 def createuser(root, superuser, staff, name, email):
     config = tutor_config.load(root)
     runner = K8sScriptRunner(root, config)
-    scripts.create_user(runner, superuser, staff, name, email)
+    runner.check_service_is_activated("lms")
+    command = scripts.create_user_command(superuser, staff, name, email)
+    kubectl_exec(config, "lms", command, attach=True)
 
 
 @click.command(help="Import the demo course")
@@ -130,117 +132,96 @@ def importdemocourse(root):
 @click.command(help="Re-index courses for better searching")
 @opts.root
 def indexcourses(root):
-    # Note: this is currently broken with "pymongo.errors.ConnectionFailure: [Errno 111] Connection refused"
-    # I'm not quite sure the settings are correctly picked up. Which is weird because migrations work very well.
     config = tutor_config.load(root)
     runner = K8sScriptRunner(root, config)
     scripts.index_courses(runner)
 
 
-@click.command(help="Launch a shell in LMS or CMS")
-@click.argument("service", type=click.Choice(["lms", "cms"]))
-def shell(service):
-    K8s().execute(service, "bash")
-
-
-@click.command(help="Create a Kubernetesadmin user")
+@click.command(name="exec", help="Execute a command in a pod of the given application")
 @opts.root
-def adminuser(root):
-    utils.kubectl("create", "-f", tutor_env.pathjoin(root, "k8s", "adminuser.yml"))
+@click.argument("service")
+@click.argument("command")
+def exec_command(root, service, command):
+    config = tutor_config.load(root)
+    kubectl_exec(config, service, command, attach=True)
 
 
-@click.command(help="Print the Kubernetes admin user token")
-def admintoken():
-    click.echo(K8s().admin_token())
+@click.command(help="View output from containers")
+@opts.root
+@click.option("-c", "--container", help="Print the logs of this specific container")
+@click.option("-f", "--follow", is_flag=True, help="Follow log output")
+@click.option("--tail", type=int, help="Number of lines to show from each container")
+@click.argument("service")
+def logs(root, container, follow, tail, service):
+    config = tutor_config.load(root)
 
+    command = ["logs"]
+    selectors = ["app.kubernetes.io/name=" + service] if service else []
+    command += resource_selector(config, *selectors)
 
-def kubectl(*command):
-    """
-    Run kubectl commands in the right namespace. Also, errors are completely
-    ignored, to avoid stopping on "AlreadyExists" errors.
-    """
-    args = list(command)
-    args += ["--namespace", K8s.NAMESPACE]
-    kubectl_no_fail(*args)
+    if container:
+        command += ["-c", container]
+    if follow:
+        command += ["--follow"]
+    if tail is not None:
+        command += ["--tail", str(tail)]
 
-
-def kubectl_no_fail(*command):
-    """
-    Run kubectl commands and ignore exceptions, to avoid stopping on
-    "AlreadyExists" errors.
-    """
-    try:
-        utils.kubectl(*command)
-    except exceptions.TutorError:
-        pass
-
-
-class K8s:
-    CLIENT = None
-    NAMESPACE = "openedx"
-
-    def __init__(self):
-        pass
-
-    @property
-    def client(self):
-        if self.CLIENT is None:
-            # Import moved here for performance reasons
-            import kubernetes
-
-            kubernetes.config.load_kube_config()
-            self.CLIENT = kubernetes.client.CoreV1Api()
-        return self.CLIENT
-
-    def pod_name(self, app):
-        selector = "app=" + app
-        try:
-            return (
-                self.client.list_namespaced_pod("openedx", label_selector=selector)
-                .items[0]
-                .metadata.name
-            )
-        except IndexError:
-            raise exceptions.TutorError(
-                "Pod with app {} does not exist. Make sure that the pod is running."
-            )
-
-    def admin_token(self):
-        # Note: this is a HORRIBLE way of looking for a secret
-        try:
-            secret = [
-                s
-                for s in self.client.list_namespaced_secret("kube-system").items
-                if s.metadata.name.startswith("admin-user-token")
-            ][0]
-        except IndexError:
-            raise exceptions.TutorError(
-                "Secret 'admin-user-token'. Make sure that admin user was created."
-            )
-        return self.client.read_namespaced_secret(
-            secret.metadata.name, "kube-system"
-        ).data["token"]
-
-    def execute(self, app, *command):
-        podname = self.pod_name(app)
-        kubectl_no_fail(
-            "exec", "--namespace", self.NAMESPACE, "-it", podname, "--", *command
-        )
+    utils.kubectl(*command)
 
 
 class K8sScriptRunner(scripts.BaseRunner):
     def exec(self, service, command):
-        K8s().execute(service, "sh", "-e", "-c", command)
+        kubectl_exec(self.config, service, command, attach=False)
+
+
+def kubectl_exec(config, service, command, attach=False):
+    selector = "app.kubernetes.io/name={}".format(service)
+
+    # Find pod in runner deployment
+    wait_for_pod_ready(config, service)
+    fmt.echo_info("Finding pod name for {} deployment...".format(service))
+    pod = utils.check_output(
+        "kubectl",
+        "get",
+        *resource_selector(config, selector),
+        "pods",
+        "-o=jsonpath={.items[0].metadata.name}",
+    )
+
+    # Run command
+    attach_opts = ["-i", "-t"] if attach else []
+    utils.kubectl(
+        "exec",
+        *attach_opts,
+        "--namespace",
+        config["K8S_NAMESPACE"],
+        pod.decode(),
+        "--",
+        "sh",
+        "-e",
+        "-c",
+        command,
+    )
+
+
+def wait_for_pod_ready(config, service):
+    fmt.echo_info("Waiting for a {} pod to be ready...".format(service))
+    utils.kubectl(
+        "wait",
+        *resource_selector(config, "app.kubernetes.io/name={}".format(service)),
+        "--for=condition=ContainersReady",
+        "--timeout=600s",
+        "pod",
+    )
 
 
 k8s.add_command(quickstart)
 k8s.add_command(start)
 k8s.add_command(stop)
 k8s.add_command(delete)
-k8s.add_command(databases)
+k8s.add_command(init)
 k8s.add_command(createuser)
 k8s.add_command(importdemocourse)
 k8s.add_command(indexcourses)
-k8s.add_command(shell)
-k8s.add_command(adminuser)
-k8s.add_command(admintoken)
+k8s.add_command(exec_command)
+k8s.add_command(logs)
