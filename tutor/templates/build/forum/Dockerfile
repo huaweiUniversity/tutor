@@ -1,4 +1,4 @@
-FROM ubuntu:16.04
+FROM ubuntu:18.04
 MAINTAINER Régis Behmo <regis@behmo.com>
 
 RUN mkdir /openedx
@@ -30,7 +30,7 @@ RUN gem install rake -v $RAKE_VERSION
 RUN gem install rubygems-update --version=2.7.9 && update_rubygems
 
 # Install forum
-RUN git clone https://github.com/edx/cs_comments_service.git --branch open-release/ficus.master --depth 1 /openedx/cs_comments_service
+RUN git clone https://github.com/edx/cs_comments_service.git --branch open-release/ginkgo.master --depth 1 /openedx/cs_comments_service
 WORKDIR /openedx/cs_comments_service
 RUN bundle install --deployment
 
