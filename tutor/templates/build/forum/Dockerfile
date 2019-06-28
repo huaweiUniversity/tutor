@@ -1,4 +1,4 @@
-FROM ubuntu:18.04
+FROM ubuntu:16.04
 MAINTAINER Régis Behmo <regis@behmo.com>
 
 RUN mkdir /openedx
